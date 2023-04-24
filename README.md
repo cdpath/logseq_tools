@@ -6,7 +6,7 @@ Welcome to Logseq Tools, a workflow to enhance your note-taking experience in Lo
 
 ## Features
 
-1. Utilizes Logseq's official [Local Http server](https://docs.logseq.com/#/page/local%20http%20server) , ensuring data stays local and privacy is protected.
+1. Utilizes Logseq's official [Local HTTP server](https://docs.logseq.com/#/page/local%20http%20server) , ensuring data stays local and privacy is protected.
 2. Offers full-text search for note titles, including Chinese Pinyin search support.
 3. Supports note Tag search.
 
@@ -17,25 +17,24 @@ Logseq Tools uses libsimple.dylib from [Simple tokenizer](https://github.com/wan
 
 ## Configuration
 
-Before using Logseq Tools, generate a Logseq API Token and set up the Logseq Graph Name and API Token in the workflow settings.
+Before using Logseq Tools, generate a Logseq API Token and set up the token in the workflow settings.
 
 To generate a token, go to Logseq Settings > Features, enable "HTTP APIs server," return to the main interface, click the "API" button, select "Authorization tokens," and generate a token.
 
-Before using Logseq Tools, generate a note index by typing `logseqinit`. Update the index with `logseqinit` whenever notes are updated.
+Before using Logseq Tools, generate a note index by typing `refreshlogseq`. Update the index with `refreshlogseq` whenever notes are updated.
 
 ## Usage
 
-With settings configured, use Logseq Tools by typing commands into Alfred:
-
-- Search note names with `lsn` + query. E.g., "lsn project plan" shows notes with "project plan" in the name.
-- Search tags with `lst` + query. E.g., "lst meeting" shows notes with the "meeting" tag.
-- List notes with specific tags using `lsnt` + tags. E.g., "lsnt plan" shows notes with the "plan" tag.
-
-
+| Command       | Description                                 |
+|---------------|---------------------------------------------|
+| lsn           | Search note names                           |
+| lst           | Search tags                                 |
+| lsnt          | List notes with specific tags              |
+| refreshlogseq | Generate note index by refreshing database |
 
 ## How It Works
 
-Logseq Tools operates by utilizing Logseq's [Local Http server](https://docs.logseq.com/#/page/local%20http%20server) to obtain a comprehensive list of Logseq note metadata. The workflow then scans this list using note names and tags to identify pertinent notes.
+Logseq Tools operates by utilizing Logseq's [Local HTTP server](https://docs.logseq.com/#/page/local%20http%20server) to obtain a comprehensive list of Logseq note metadata. The workflow then scans this list using note names and tags to identify pertinent notes.
 
 To facilitate full-text filename search in Chinese with Pinyin, the [Simple tokenizer](https://github.com/wangfenjin/simple) is also integrated.
 

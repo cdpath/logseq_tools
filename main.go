@@ -29,6 +29,7 @@ type Page struct {
 	OriginalName string                  `json:"originalName"`
 	Properties   *map[string]interface{} `json:"properties,omitempty"`
 	Tags         string                  `json:"-"`
+	GraphName    string                  `json:"graph_name"`
 }
 
 type OutputItem struct {
@@ -128,10 +129,6 @@ func main() {
 
 func makeOutputItems(results []Page) []OutputItem {
 	outputItems := make([]OutputItem, len(results))
-	logseqGraph := os.Getenv("LogseqGraph")
-	if logseqGraph == "" {
-		logseqGraph = "Logseq"
-	}
 
 	for i, result := range results {
 		encodedOriginalName := url.QueryEscape(result.OriginalName)
@@ -140,7 +137,7 @@ func makeOutputItems(results []Page) []OutputItem {
 			UID:      result.UUID,
 			Title:    result.OriginalName,
 			Subtitle: result.Tags,
-			Arg:      fmt.Sprintf("logseq://graph/%s?page=%s", logseqGraph, encodedOriginalName),
+			Arg:      fmt.Sprintf("logseq://graph/%s?page=%s", result.GraphName, encodedOriginalName),
 			Icon:     "icon.png",
 		}
 	}
@@ -207,7 +204,8 @@ func createTable(db *sql.DB) {
 		uuid TEXT,
 		journal BOOLEAN,
 		original_name TEXT,
-		properties TEXT
+		properties TEXT,
+		graph_name TEXT
 	);
 
 	CREATE TABLE IF NOT EXISTS tags (
@@ -236,9 +234,11 @@ func createFTSTable(db *sql.DB) {
 }
 
 func insertPages(db *sql.DB, pages []Page) {
+	graphName := getGraphName()
+
 	insertPageSQL := `
-	INSERT OR REPLACE INTO pages (id, created_at, updated_at, uuid, journal, original_name, properties)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
+	INSERT OR REPLACE INTO pages (id, created_at, updated_at, uuid, journal, original_name, properties, graph_name)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	insertTagSQL := `
@@ -254,7 +254,7 @@ func insertPages(db *sql.DB, pages []Page) {
 	for _, page := range pages {
 		propertiesJSON, _ := json.Marshal(page.Properties)
 
-		result, err := db.Exec(insertPageSQL, page.ID, page.CreatedAt, page.UpdatedAt, page.UUID, page.Journal, page.OriginalName, string(propertiesJSON))
+		result, err := db.Exec(insertPageSQL, page.ID, page.CreatedAt, page.UpdatedAt, page.UUID, page.Journal, page.OriginalName, string(propertiesJSON), graphName)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -285,7 +285,7 @@ func insertPages(db *sql.DB, pages []Page) {
 
 func searchPages(db *sql.DB, query string) []Page {
 	rows, err := db.Query(`
-		SELECT pages.id, pages.created_at, pages.updated_at, pages.uuid, pages.journal, pages.original_name, pages.properties, IFNULL(GROUP_CONCAT(tags.tag, ' '), '') as tags
+		SELECT pages.id, pages.created_at, pages.updated_at, pages.uuid, pages.journal, pages.original_name, pages.properties, IFNULL(GROUP_CONCAT(tags.tag, ' '), '') as tags, pages.graph_name
 		FROM pages
 		LEFT JOIN tags ON pages.id = tags.page_id
 		WHERE pages.rowid IN (SELECT rowid FROM pages_fts WHERE original_name MATCH ?)
@@ -301,7 +301,7 @@ func searchPages(db *sql.DB, query string) []Page {
 	for rows.Next() {
 		var page Page
 		var propertiesStr string
-		err = rows.Scan(&page.ID, &page.CreatedAt, &page.UpdatedAt, &page.UUID, &page.Journal, &page.OriginalName, &propertiesStr, &page.Tags)
+		err = rows.Scan(&page.ID, &page.CreatedAt, &page.UpdatedAt, &page.UUID, &page.Journal, &page.OriginalName, &propertiesStr, &page.Tags, &page.GraphName)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -322,7 +322,7 @@ func searchPages(db *sql.DB, query string) []Page {
 
 func filterPagesByTags(db *sql.DB, tags []string) []Page {
 	query := `
-	SELECT pages.id, pages.created_at, pages.updated_at, pages.uuid, pages.journal, pages.original_name, pages.properties, GROUP_CONCAT(tags.tag, ' ') AS tags
+	SELECT pages.id, pages.created_at, pages.updated_at, pages.uuid, pages.journal, pages.original_name, pages.properties, GROUP_CONCAT(tags.tag, ' ') AS tags, pages.graph_name
 	FROM pages
 	INNER JOIN tags ON pages.id = tags.page_id
 	WHERE tags.tag IN (` + strings.Repeat("?, ", len(tags)-1) + `?)
@@ -336,8 +336,6 @@ func filterPagesByTags(db *sql.DB, tags []string) []Page {
 	}
 	args[len(tags)] = len(tags)
 
-	log.Printf("sql=%v, args=%v", query, args)
-
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		log.Fatal(err)
@@ -348,7 +346,7 @@ func filterPagesByTags(db *sql.DB, tags []string) []Page {
 	for rows.Next() {
 		var page Page
 		var propertiesStr string
-		err = rows.Scan(&page.ID, &page.CreatedAt, &page.UpdatedAt, &page.UUID, &page.Journal, &page.OriginalName, &propertiesStr, &page.Tags)
+		err = rows.Scan(&page.ID, &page.CreatedAt, &page.UpdatedAt, &page.UUID, &page.Journal, &page.OriginalName, &propertiesStr, &page.Tags, &page.GraphName)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -415,10 +413,6 @@ func printTags(db *sql.DB, tagFilter string) {
 func makeTagOutputItems(tags []string) []OutputItem {
 	rand.Seed(time.Now().UnixNano())
 	outputItems := make([]OutputItem, len(tags))
-	logseqGraph := os.Getenv("LogseqGraph")
-	if logseqGraph == "" {
-		logseqGraph = "Logseq"
-	}
 
 	for i, tag := range tags {
 		outputItems[i] = OutputItem{
@@ -430,4 +424,30 @@ func makeTagOutputItems(tags []string) []OutputItem {
 		}
 	}
 	return outputItems
+}
+
+func getGraphName() string {
+	url := "http://127.0.0.1:12315/api"
+	req, err := http.NewRequest("POST", url, strings.NewReader(`{"method": "logseq.App.getCurrentGraph"}`))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", os.Getenv("LogseqToken")))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return result["name"].(string)
 }
